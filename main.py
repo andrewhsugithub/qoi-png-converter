@@ -8,6 +8,7 @@ OUTPUT_QOI = "fruits.qoi"
 
 INPUT_IMAGE = "test.dng"
 OUTPUT_QOI = "test.qoi"
+OUTPUT_PNG = "test.png"
 
 
 def png_to_qoi(png_path, qoi_path):
@@ -77,9 +78,30 @@ if __name__ == "__main__":
     print(
         f"Loaded image {INPUT_IMAGE}: {desc['width']}x{desc['height']} Channels: {desc['channels']}"
     )
+    print(f"Original {INPUT_IMAGE} {len(pixel_data)} bytes")
+
+    #! Since our QOI is in Python, and Pillow is in C, the performance difference will be significant, hence the comparison isn't entirely fair.
+    #! Use python's qoi (https://pypi.org/project/qoi/) package which is a C extension for a fairer comparison.
+    import time
+
+    # Encode to QOI in pure Python (our implementation)
+    start_time = time.time()
     encoded = QOIEncoder.encode(pixel_data, desc)
 
     with open(OUTPUT_QOI, "wb") as f:
         f.write(encoded)
-    print(f"Original image {len(pixel_data)} bytes")
-    print(f"Encoded to {len(encoded)} bytes")
+
+    end_time = time.time()
+    print(f"Saved QOI to {OUTPUT_QOI} in {end_time - start_time:.2f} seconds")
+    print(f"Encoded QOI to {len(encoded)} bytes")
+
+    # Encode to PNG in C using Pillow
+    start_time = time.time()
+
+    mode = "RGBA" if desc["channels"] == 4 else "RGB"
+    image = Image.frombytes(mode, (desc["width"], desc["height"]), pixel_data)
+    image.save(OUTPUT_PNG, format="PNG")
+
+    end_time = time.time()
+    print(f"Saved PNG to {OUTPUT_PNG} in {end_time - start_time:.2f} seconds")
+    print(f"Encoded PNG to {len(open(OUTPUT_PNG, 'rb').read())} bytes")
