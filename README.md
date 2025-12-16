@@ -5,9 +5,9 @@
 1. Create a virtual environment:
 
    ```bash
-   python3 -m venv venv
+   python3 -m venv .venv
    source .venv/bin/activate
-   or uv
+   # or uv
    uv venv --python 3.13
    source .venv/bin/activate
    ```
@@ -16,7 +16,7 @@
 
    ```bash
    pip install .
-   or uv
+   # or uv
    uv sync
    ```
 
