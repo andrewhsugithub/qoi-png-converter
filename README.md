@@ -103,9 +103,13 @@ This chunk is used when the pixel color is not the same as the _immediately_ pre
 - **Step-by-Step Encoding:**
 
   1.  **Calculate Hash:** The encoder calculates the hash for the current pixel to find its index position.
+
       $$Index = (r \times 3 + g \times 5 + b \times 7 + a \times 11) \pmod{64}$$
+
       $$Index = (50 \times 3 + 100 \times 5 + 50 \times 7 + 255 \times 11) \pmod{64}$$
+
       $$Index = (150 + 500 + 350 + 2805) \pmod{64}$$
+
       $$Index = 3805 \pmod{64} = 29$$
 
       _(Note: In this specific scenario, let's assume the hash collision logic or previous history placed our specific Dark Green color at index **29** for the sake of the example)._
@@ -171,8 +175,8 @@ This chunk handles larger color shifts than `OP_DIFF`. It relies on the fact tha
 
   2. **Calculate Dr_Dg and Db_Dg:** These are the differences of Red and Blue _minus_ the Green difference.
 
-     - $dr\_dg = (120 - 100) - 25 = 20 - 25 = -5$
-     - $db\_dg = (122 - 100) - 25 = 22 - 25 = -3$
+     - $dr\\_dg = (120 - 100) - 25 = 20 - 25 = -5$
+     - $db\\_dg = (122 - 100) - 25 = 22 - 25 = -3$
        (Range allowed: -8..7) .
 
   3. **Apply Biases:**
@@ -188,7 +192,7 @@ This chunk handles larger color shifts than `OP_DIFF`. It relies on the fact tha
      - **Byte 1 (Tag + Green):** Tag `10` + `111001` = `10111001` (`0xB9`).
      - **Byte 2 (Dr + Db):** `0011` (high nibble) | `0101` (low nibble) = `00110101` (`0x35`).
 
-  - **Final Output:** `0xB9 0x35` (2 bytes).
+- **Final Output:** `0xB9 0x35` (2 bytes).
 
 ### 5. QOI_OP_RGB (Full RGB)
 
