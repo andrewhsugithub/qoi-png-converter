@@ -1,3 +1,5 @@
+Pure Python implementation of the [Quite OK Image (QOI)](https://qoiformat.org/qoi-specification.pdf) format, which is a fast, lossless image compression format designed for simplicity and speed.
+
 # Setup
 
 > See .python-version for required Python version.
@@ -20,11 +22,122 @@
    uv sync
    ```
 
+# Encode an image to QOI with our implementation
+
+> Note: Change `INPUT_IMAGE` in `main.py` to test with different images. Same for `OUTPUT_*` variables.
+
+```bash
+python main.py
+# or uv
+uv run main.py
+```
+
+# Convert PNG to QOI or QOI to PNG using our QOI implementation
+
+```bash
+python converter.py
+# or uv
+uv run converter.py
+```
+
+> Note: Change the `INPUT_IMAGE` variable in `converter.py` to test with different images.
+
 # Test images
 
 ![raw ./test.dng image](./test.dng) from https://www.signatureedits.com/free-raw-photos/
 
 ![test png image](./fruits.png)
+
+# Comparison with PNG
+
+We can compare the QOI encoded file size and encoding time with PNG for the same image (`./test.dng`).
+
+```bash
+uv run comparison.py
+```
+
+> Note: PNG encoding is done using Pillow which is implemented in C, while our QOI implementation is in pure Python. Hence the performance difference will be significant, and the comparison isn't entirely fair. For a fairer comparison, we used a C extension Python wrapper for [QOI](https://github.com/kodonnell/qoi) comparison.
+
+## Results
+
+```bash
+Loaded image test.dng: 5784x8672 Channels: 3
+Original test.dng 150476544 bytes
+Saved QOI to test.qoi in 0.28 seconds
+Encoded QOI to 76246966 bytes
+Saved PNG to test.png in 2.36 seconds
+Encoded PNG to 63311468 bytes
+```
+
+The QOI encoded file is about 50% the size of the original raw image, while PNG is about 42% since PNG uses more complex compression, see detailed comparison below. However, QOI encoding is significantly faster than PNG encoding. This demonstrates QOI's efficiency in both speed and compression for lossless image formats.
+
+# Our QOI Implementation vs [QOI C Extension](https://github.com/kodonnell/qoi)
+
+Test correctness to ensure our implementation matches the output of the C extension.
+
+```bash
+pytest .
+```
+
+# PNG vs QOI Detailed Comparison
+
+### Overview
+
+| Feature              | PNG (Portable Network Graphics)                                                    | QOI (Quite OK Image)                                                       |
+| -------------------- | ---------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| **Compression Type** | **Lossless** (primary). Can be lossy via pre-processing (quantization).            | **Strictly Lossless**. No lossy mode exists in the spec.                   |
+| **Color Spaces**     | **Versatile**. Supports Grayscale, Indexed (Palette), RGB, and RGBA.               | **Limited**. Supports only **RGB** (3 channels) and **RGBA** (4 channels). |
+| **Bit Depth**        | **Flexible**. 1, 2, 4, 8, or **16 bits** per channel.                              | **Fixed**. Strictly **8 bits** per channel (24-bit RGB or 32-bit RGBA).    |
+| **Transparency**     | **Full Alpha Channel** (8/16-bit) or simple binary transparency (tRNS chunk).      | **Full Alpha Channel** (8-bit) only.                                       |
+| **Animation**        | **Not Native**. Requires APNG extension (widely supported but separate).           | **No**. Single frame static images only.                                   |
+| **Streaming**        | **Difficult**. Requires complex buffering to handle chunk logic and Huffman trees. | **Excellent**. Designed for O(n) streaming with minimal RAM.               |
+| **Interlacing**      | **Supported** (Adam7). Allows blurry preview while downloading.                    | **No**. Encodes strictly row-by-row, top-to-bottom.                        |
+| **Endianness**       | **Big Endian** (Network Byte Order).                                               | **Big Endian**. Matches PNG convention.                                    |
+| **Metadata**         | **Rich**. EXIF, ICC Profiles, Gamma, Text, Last Modified Time.                     | **Minimal**. Only flags for sRGB vs. Linear color space.                   |
+
+### Compression Pipeline
+
+**Comparison of the step-by-step workflow from raw pixels to file output.**
+
+| Step                    | PNG (Deflate Algorithm)                                                                                                               | QOI (Quite OK Image Algorithm)                                                                                     |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| **1. Pre-processing**   | **Filtering:** Applies one of 5 filters (None, Sub, Up, Average, Paeth) to every scanline to predict pixel values based on neighbors. | **None:** Reads raw pixels directly (R, G, B, A) in a single pass.                                                 |
+| **2. Pattern Matching** | **LZ77 Sliding Window:** Searches a 32KB history window to find repeating sequences of bytes (strings of data).                       | **Streaming Decision:** Checks only the _immediately previous pixel_ or a _64-slot cache_ of recently seen colors. |
+| **3. Entropy Coding**   | **Huffman Coding:** Converts symbols into variable-length bit codes (e.g., frequent values get 3 bits, rare get 10 bits).             | **None:** Writes fixed-size chunks (chunks are always aligned to whole bytes).                                     |
+| **4. Output Format**    | **Bit-Stream:** A continuous stream of bits; data boundaries do not align with byte boundaries.                                       | **Byte-Stream:** A stream of 8-bit bytes; no bit-shifting required to read/write.                                  |
+
+### Memory & Lookback "Context"
+
+**How much historical data the encoder must maintain to make decisions.**
+
+| Feature              | PNG                                                                                                       | QOI                                                                                                       |
+| -------------------- | --------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| **Lookback Scope**   | **32 KB Window:** Can reference a pixel pattern seen thousands of pixels ago.                             | **Last Pixel + 64 Cache:** Can only reference the very last pixel or one of 64 recent distinct colors.    |
+| **Search Cost**      | **High (Linear/Tree):** The encoder must search the 32KB window to find the "longest match."              | **Instant (O(1)):** Uses a simple hash: `(r*3 + g*5 + b*7 + a*11) % 64` to jump directly to a cache slot. |
+| **Prediction Logic** | **Complex 2D:** The "Paeth" filter looks at Left, Up, and Upper-Left pixels to predict the current value. | **Simple 1D:** Only looks at the previous pixel (Left) to calculate differences.                          |
+
+### Computational Complexity (CPU Operations)
+
+**Why QOI executes faster on modern hardware.**
+
+| Complexity Factor   | PNG                                                                                           | QOI                                                                                   |
+| ------------------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| **Data Alignment**  | **Bit-Packing:** CPU must perform extensive bit-shifting and masking to decode Huffman trees. | **Byte-Aligned:** CPU loads full 8-bit, 16-bit, or 32-bit words directly from memory. |
+| **Math Operations** | **Heavy:** Requires absolute differences, linear functions (Paeth), and tree traversals.      | **Light:** Uses simple integer addition/subtraction and equality checks (`==`).       |
+| **Branching**       | **Predictable but Deep:** Deep loop structures for Huffman decoding.                          | **Shallow:** simple `if/else` ladder (Is it a run? Is it in cache? Is it a diff?).    |
+| **Time Complexity** | **Variable:** Depends heavily on "effort" settings (how hard to search the LZ77 window).      | **O(n):** Linear time. Touches every pixel exactly once.                              |
+
+### Encoding Operations (Opcodes)
+
+**How specific pixel scenarios are written to the file.**
+
+| Scenario             | PNG (Deflate Stream)                                                                                    | QOI (Explicit Opcode)                                                                              |
+| -------------------- | ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| **Repeating Pixels** | **Length/Distance Pair:** A code saying "Go back X bytes and copy Y bytes."                             | **`QOI_OP_RUN`:** A 1-byte tag saying "Repeat previous pixel X times" (max 62).                    |
+| **Recent Color**     | **LZ77 Match:** References the position in the sliding window where this color last appeared.           | **`QOI_OP_INDEX`:** A 1-byte tag pointing to index 0-63 in the color array.                        |
+| **Small Change**     | **Filter + Huffman:** Filter reduces value to small integer \to Huffman encodes it.                     | **`QOI_OP_DIFF`:** A 1-byte tag storing the 2-bit difference for R, G, and B.                      |
+| **Luminance Change** | **N/A:** Handled generally by filters.                                                                  | **`QOI_OP_LUMA`:** A 2-byte sequence optimizing for green channel changes (human eye sensitivity). |
+| **New Unique Color** | **Literal Byte:** Writes the raw byte, potentially expanding file size if Huffman tree isn't optimized. | **`QOI_OP_RGB`:** A 4-byte tag writing the full raw Red, Green, Blue values immediately.           |
 
 # [QOI](https://qoiformat.org/qoi-specification.pdf) - Quite OK Image Format Overview
 
